@@ -1,53 +1,75 @@
 package stroom.search.impl.shard;
 
+import stroom.task.api.TaskContext;
+import stroom.task.api.TaskContextUtil;
+import stroom.task.api.TaskTerminatedException;
 import stroom.util.concurrent.CompleteException;
-import stroom.util.concurrent.UncheckedInterruptedException;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
 
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public class DocIdQueue {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(DocIdQueue.class);
+    private static final CompleteException COMPLETE = new CompleteException();
 
-    private final ArrayBlockingQueue<Integer> queue;
-    private final AtomicBoolean complete = new AtomicBoolean();
+    private final TaskContext taskContext;
+    private final ArrayBlockingQueue<Object> queue;
 
-    public DocIdQueue(final int capacity) {
+    public DocIdQueue(final TaskContext taskContext,
+                      final int capacity) {
+        this.taskContext = taskContext;
         queue = new ArrayBlockingQueue<>(capacity);
     }
 
-    public Integer next() throws CompleteException {
+    public void put(final int value) {
+        doPut(value);
+    }
+
+    private void doPut(final Object value) {
         try {
-            final boolean complete = this.complete.get();
-            final Integer docId = queue.poll(1, TimeUnit.SECONDS);
-            if (docId == null && complete) {
-                throw new CompleteException();
-            }
-            return docId;
+            TaskContextUtil.runInterruptibly(taskContext, () -> {
+                queue.put(value);
+                return null;
+            });
         } catch (final InterruptedException e) {
-            // We shouldn't get interrupted.
-            LOGGER.error(e::getMessage, e);
-            throw UncheckedInterruptedException.create(e);
+            LOGGER.trace(e::getMessage, e);
+            // Clear the doc id queue to ensure the search code is not blocked from completing.
+            clear();
+            throw new TaskTerminatedException();
         }
     }
 
-    public boolean offer(final Integer docId,
-                         final long timeout,
-                         final TimeUnit unit) {
+    public int take() throws CompleteException {
         try {
-            return queue.offer(docId, timeout, unit);
+            final Object object = TaskContextUtil.runInterruptibly(taskContext, queue::take);
+            if (COMPLETE == object) {
+                complete();
+                throw COMPLETE;
+            }
+            return (int) object;
         } catch (final InterruptedException e) {
-            // We shouldn't get interrupted.
-            LOGGER.error(e::getMessage, e);
-            throw UncheckedInterruptedException.create(e);
+            LOGGER.trace(e::getMessage, e);
+            // Clear the doc id queue to ensure the search code is not blocked from completing.
+            clear();
+            throw new TaskTerminatedException();
         }
     }
 
     public void complete() {
-        complete.set(true);
+        doPut(COMPLETE);
+    }
+
+    public void clear() {
+        queue.clear();
+    }
+
+    public int size() {
+        return queue.size();
+    }
+
+    public boolean isEmpty() {
+        return queue.isEmpty();
     }
 }

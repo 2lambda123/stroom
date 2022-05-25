@@ -31,7 +31,6 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.SimpleCollector;
 
 import java.io.IOException;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Supplier;
 
@@ -74,31 +73,26 @@ class IndexShardHitCollector extends SimpleCollector {
 
     @Override
     public void collect(final int doc) {
-        // The interrupt status seems to be cleared somewhere is Lucene code so check here if we should terminate.
-        if (taskContext.isTerminated()) {
-            info(() -> "Quitting...");
-            LOGGER.debug("Quitting (terminated). {}, query term [{}]", this, query);
-            throw new TaskTerminatedException();
-        }
-
-        // Pause the current search if the deque is full.
-        final int docId = docBase + doc;
-
         try {
+            // Pause the current search if the deque is full.
+            final int docId = docBase + doc;
+
             SearchProgressLog.increment(queryKey, SearchPhase.INDEX_SHARD_SEARCH_TASK_HANDLER_DOC_ID_STORE_PUT);
-            // Keep trying to add the doc id until we manage it or termination occurs.
-            LOGGER.trace("Collecting docId {} from {}, query term [{}]", docId, this, query);
-            while (!taskContext.isTerminated() && !docIdQueue.offer(docId, 1, TimeUnit.SECONDS)) {
-                LOGGER.trace("Continuing to offer docId {} from {}, query term [{}]", docId, this, query);
-            }
+            docIdQueue.put(docId);
+
+            // Add to the hit count.
+            localHitCount.increment();
+            totalHitCount.increment();
+
             info(() -> "Found " + localHitCount + " hits");
+            LOGGER.trace("Collect called. {}, query term [{}]", this, query);
+        } catch (final TaskTerminatedException e) {
+            info(() -> "Quitting...");
+            LOGGER.debug("Quitting (interrupted). {}, query term [{}]", this, query);
+            throw e;
         } catch (final RuntimeException e) {
             LOGGER.error("Error logging search progress: {}. {}", e.getMessage(), this, e);
         }
-
-        // Add to the hit count.
-        localHitCount.increment();
-        totalHitCount.increment();
     }
 
     private void info(final Supplier<String> message) {

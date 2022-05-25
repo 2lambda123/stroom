@@ -32,7 +32,6 @@ import stroom.processor.shared.TaskStatus;
 import stroom.security.api.SecurityContext;
 import stroom.task.api.TaskContext;
 import stroom.task.api.TaskContextFactory;
-import stroom.task.api.TerminateHandlerFactory;
 import stroom.util.date.DateUtil;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
@@ -81,7 +80,7 @@ public class DataProcessorTaskHandler {
             // Execute with a task context.
             return taskContextFactory.contextResult(
                     "Data Processor",
-                    TerminateHandlerFactory.NOOP_FACTORY,
+                    false,
                     taskContext -> exec(taskContext, task)).get();
         });
     }

@@ -22,6 +22,8 @@ import stroom.task.api.TaskTerminatedException;
 import stroom.task.api.TerminateHandler;
 import stroom.task.shared.TaskId;
 import stroom.util.NullSafe;
+import stroom.util.logging.LambdaLogger;
+import stroom.util.logging.LambdaLoggerFactory;
 
 import org.slf4j.Logger;
 
@@ -36,6 +38,8 @@ import java.util.function.Supplier;
 
 public class TaskContextImpl implements TaskContext {
 
+    private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(TaskContextImpl.class);
+
     private final TaskId taskId;
     private final String name;
     private final UserIdentity userIdentity;
@@ -45,7 +49,7 @@ public class TaskContextImpl implements TaskContext {
     private volatile boolean terminate;
     private volatile Supplier<String> messageSupplier;
     private volatile Thread thread;
-    private volatile TerminateHandler terminateHandler;
+    private final List<TerminateHandler> terminateHandlers = new ArrayList<>();
     private volatile long submitTimeMs;
 
     public TaskContextImpl(final TaskId taskId,
@@ -126,9 +130,16 @@ public class TaskContextImpl implements TaskContext {
     synchronized void terminate() {
         this.terminate = true;
         children.forEach(TaskContextImpl::terminate);
+        signalHandlers();
+    }
 
-        if (terminateHandler != null) {
-            terminateHandler.onTerminate();
+    private void signalHandlers() {
+        for (final TerminateHandler terminateHandler : terminateHandlers) {
+            try {
+                terminateHandler.onTerminate();
+            } catch (final RuntimeException e) {
+                LOGGER.trace(e::getMessage, e);
+            }
         }
     }
 
@@ -144,11 +155,21 @@ public class TaskContextImpl implements TaskContext {
         return userIdentity.getSessionId();
     }
 
-    synchronized void setTerminateHandler(final TerminateHandler terminateHandler) {
-        this.terminateHandler = terminateHandler;
-        if (terminate && terminateHandler != null) {
-            terminateHandler.onTerminate();
+    @Override
+    public synchronized boolean addTerminateHandler(final TerminateHandler terminateHandler) {
+        final boolean success = terminateHandlers.add(terminateHandler);
+        if (terminate) {
+            signalHandlers();
         }
+        return success;
+    }
+
+    @Override
+    public synchronized boolean removeTerminateHandler(final TerminateHandler terminateHandler) {
+        if (terminate) {
+            signalHandlers();
+        }
+        return terminateHandlers.remove(terminateHandler);
     }
 
     synchronized void setThread(final Thread thread) {

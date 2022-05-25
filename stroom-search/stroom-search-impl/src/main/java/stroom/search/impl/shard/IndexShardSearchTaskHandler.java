@@ -32,7 +32,8 @@ import stroom.search.impl.SearchException;
 import stroom.task.api.ExecutorProvider;
 import stroom.task.api.TaskContext;
 import stroom.task.api.TaskContextFactory;
-import stroom.task.api.TerminateHandlerFactory;
+import stroom.task.api.TaskContextUtil;
+import stroom.task.api.TaskTerminatedException;
 import stroom.task.api.ThreadPoolImpl;
 import stroom.task.shared.ThreadPool;
 import stroom.util.concurrent.CompleteException;
@@ -162,8 +163,7 @@ public class IndexShardSearchTaskHandler {
         if (query != null) {
             final int maxDocIdQueueSize = shardConfig.getMaxDocIdQueueSize();
             LOGGER.debug(() -> "Creating docIdStore with size " + maxDocIdQueueSize);
-            final DocIdQueue docIdQueue = new DocIdQueue(maxDocIdQueueSize);
-
+            final DocIdQueue docIdQueue = new DocIdQueue(parentContext, maxDocIdQueueSize);
             try {
                 final SearcherManager searcherManager = indexShardSearcher.getSearcherManager();
                 final IndexSearcher searcher = searcherManager.acquire();
@@ -171,7 +171,7 @@ public class IndexShardSearchTaskHandler {
                     final Runnable runnable = taskContextFactory.childContext(
                             parentContext,
                             "Index Searcher",
-                            TerminateHandlerFactory.NOOP_FACTORY,
+                            false,
                             taskContext -> {
                                 try {
                                     LOGGER.logDurationIfDebugEnabled(() -> {
@@ -207,14 +207,21 @@ public class IndexShardSearchTaskHandler {
                             // Uncomment this to slow searches down in dev
 //                            ThreadUtil.sleepAtLeastIgnoreInterrupts(1_000);
                             // Take the next item
-                            final Integer docId = docIdQueue.next();
-                            if (docId != null) {
-                                // If we have a doc id then retrieve the stored data for it.
-                                SearchProgressLog.increment(queryKey,
-                                        SearchPhase.INDEX_SHARD_SEARCH_TASK_HANDLER_DOC_ID_STORE_TAKE);
-                                getStoredData(storedFieldNames, valuesConsumer, searcher, docId, errorConsumer);
-                            }
+                            final int docId = docIdQueue.take();
+
+                            // If we have a doc id then retrieve the stored data for it.
+                            SearchProgressLog.increment(queryKey,
+                                    SearchPhase.INDEX_SHARD_SEARCH_TASK_HANDLER_DOC_ID_STORE_TAKE);
+                            getStoredData(
+                                    parentContext,
+                                    storedFieldNames,
+                                    valuesConsumer,
+                                    searcher,
+                                    docId,
+                                    errorConsumer);
                         }
+                    } catch (final TaskTerminatedException e) {
+                        LOGGER.trace(() -> "Terminated");
                     } catch (final CompleteException e) {
                         LOGGER.debug(() -> "Complete");
                         LOGGER.trace(e::getMessage, e);
@@ -239,7 +246,8 @@ public class IndexShardSearchTaskHandler {
      * only want to get stream and event ids, in these cases no values are
      * retrieved, only stream and event ids.
      */
-    private void getStoredData(final String[] storedFieldNames,
+    private void getStoredData(final TaskContext parentContext,
+                               final String[] storedFieldNames,
                                final ValuesConsumer valuesConsumer,
                                final IndexSearcher searcher,
                                final int docId,
@@ -269,7 +277,12 @@ public class IndexShardSearchTaskHandler {
                 }
             }
 
-            valuesConsumer.add(values);
+            TaskContextUtil.runInterruptibly(parentContext, () -> {
+                valuesConsumer.add(values);
+                return null;
+            });
+        } catch (final InterruptedException e) {
+            LOGGER.trace(() -> "Interrupted");
         } catch (final IOException | RuntimeException e) {
             error(errorConsumer, e);
         }

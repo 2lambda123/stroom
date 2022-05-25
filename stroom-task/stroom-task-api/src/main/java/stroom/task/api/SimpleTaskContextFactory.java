@@ -40,7 +40,7 @@ public class SimpleTaskContextFactory implements TaskContextFactory {
 
     @Override
     public Runnable context(final String taskName,
-                            final TerminateHandlerFactory terminateHandlerFactory,
+                            final boolean allowInterrupt,
                             final Consumer<TaskContext> consumer) {
         return () -> consumer.accept(new SimpleTaskContext());
     }
@@ -48,7 +48,7 @@ public class SimpleTaskContextFactory implements TaskContextFactory {
     @Override
     public Runnable childContext(final TaskContext parentContext,
                                  final String taskName,
-                                 final TerminateHandlerFactory terminateHandlerFactory,
+                                 final boolean allowInterrupt,
                                  final Consumer<TaskContext> consumer) {
         Objects.requireNonNull(parentContext, "Expecting a parent context when creating a child context");
         return () -> consumer.accept(new SimpleTaskContext());
@@ -56,7 +56,7 @@ public class SimpleTaskContextFactory implements TaskContextFactory {
 
     @Override
     public <R> Supplier<R> contextResult(final String taskName,
-                                         final TerminateHandlerFactory terminateHandlerFactory,
+                                         final boolean allowInterrupt,
                                          final Function<TaskContext, R> function) {
         return () -> function.apply(new SimpleTaskContext());
     }
@@ -64,7 +64,7 @@ public class SimpleTaskContextFactory implements TaskContextFactory {
     @Override
     public <R> Supplier<R> childContextResult(final TaskContext parentContext,
                                               final String taskName,
-                                              final TerminateHandlerFactory terminateHandlerFactory,
+                                              final boolean allowInterrupt,
                                               final Function<TaskContext, R> function) {
         Objects.requireNonNull(parentContext, "Expecting a parent context when creating a child context");
         return () -> function.apply(new SimpleTaskContext());

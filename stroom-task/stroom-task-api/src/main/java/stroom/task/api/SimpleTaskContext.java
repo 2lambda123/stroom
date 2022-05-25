@@ -18,4 +18,14 @@ public class SimpleTaskContext implements TaskContext {
     @Override
     public void reset() {
     }
+
+    @Override
+    public boolean addTerminateHandler(final TerminateHandler terminateHandler) {
+        return true;
+    }
+
+    @Override
+    public boolean removeTerminateHandler(final TerminateHandler terminateHandler) {
+        return true;
+    }
 }

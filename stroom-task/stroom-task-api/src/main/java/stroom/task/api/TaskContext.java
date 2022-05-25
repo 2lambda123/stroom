@@ -53,4 +53,8 @@ public interface TaskContext extends Terminator {
      * Reset submission time etc.
      */
     void reset();
+
+    boolean addTerminateHandler(final TerminateHandler terminateHandler);
+
+    boolean removeTerminateHandler(final TerminateHandler terminateHandler);
 }

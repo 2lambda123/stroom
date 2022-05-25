@@ -6,7 +6,6 @@ import stroom.task.api.TaskContext;
 import stroom.task.api.TaskContextFactory;
 import stroom.task.api.TaskTerminatedException;
 import stroom.task.api.TerminateHandler;
-import stroom.task.api.TerminateHandlerFactory;
 import stroom.task.shared.TaskId;
 import stroom.util.logging.LambdaLogger;
 import stroom.util.logging.LambdaLoggerFactory;
@@ -25,9 +24,6 @@ import javax.inject.Singleton;
 class TaskContextFactoryImpl implements TaskContextFactory, TaskContext {
 
     private static final LambdaLogger LOGGER = LambdaLoggerFactory.getLogger(TaskContextFactoryImpl.class);
-
-    private static final TerminateHandlerFactory DEFAULT_TERMINATE_HANDLER_FACTORY =
-            new ThreadTerminateHandlerFactory();
 
     private final SecurityContext securityContext;
     private final PipelineScopeRunnable pipelineScopeRunnable;
@@ -50,7 +46,7 @@ class TaskContextFactoryImpl implements TaskContextFactory, TaskContext {
                 null,
                 securityContext.getUserIdentity(),
                 taskName,
-                DEFAULT_TERMINATE_HANDLER_FACTORY,
+                true,
                 consumer);
     }
 
@@ -63,7 +59,7 @@ class TaskContextFactoryImpl implements TaskContextFactory, TaskContext {
                 getTaskId(parent),
                 getUserIdentity(parent),
                 taskName,
-                DEFAULT_TERMINATE_HANDLER_FACTORY,
+                true,
                 consumer);
     }
 
@@ -73,7 +69,7 @@ class TaskContextFactoryImpl implements TaskContextFactory, TaskContext {
                 null,
                 securityContext.getUserIdentity(),
                 taskName,
-                DEFAULT_TERMINATE_HANDLER_FACTORY,
+                true,
                 function);
     }
 
@@ -86,59 +82,59 @@ class TaskContextFactoryImpl implements TaskContextFactory, TaskContext {
                 getTaskId(parent),
                 getUserIdentity(parent),
                 taskName,
-                DEFAULT_TERMINATE_HANDLER_FACTORY,
+                true,
                 function);
     }
 
     @Override
     public Runnable context(final String taskName,
-                            final TerminateHandlerFactory terminateHandlerFactory,
+                            final boolean allowInterrupt,
                             final Consumer<TaskContext> consumer) {
         return createFromConsumer(
                 null,
                 securityContext.getUserIdentity(),
                 taskName,
-                terminateHandlerFactory,
+                allowInterrupt,
                 consumer);
     }
 
     @Override
     public Runnable childContext(final TaskContext parentContext,
                                  final String taskName,
-                                 final TerminateHandlerFactory terminateHandlerFactory,
+                                 final boolean allowInterrupt,
                                  final Consumer<TaskContext> consumer) {
         final TaskContext parent = resolveParent(parentContext);
         return createFromConsumer(
                 getTaskId(parent),
                 getUserIdentity(parent),
                 taskName,
-                terminateHandlerFactory,
+                allowInterrupt,
                 consumer);
     }
 
     @Override
     public <R> Supplier<R> contextResult(final String taskName,
-                                         final TerminateHandlerFactory terminateHandlerFactory,
+                                         final boolean allowInterrupt,
                                          final Function<TaskContext, R> function) {
         return createFromFunction(
                 null,
                 securityContext.getUserIdentity(),
                 taskName,
-                terminateHandlerFactory,
+                allowInterrupt,
                 function);
     }
 
     @Override
     public <R> Supplier<R> childContextResult(final TaskContext parentContext,
                                               final String taskName,
-                                              final TerminateHandlerFactory terminateHandlerFactory,
+                                              final boolean allowInterrupt,
                                               final Function<TaskContext, R> function) {
         final TaskContext parent = resolveParent(parentContext);
         return createFromFunction(
                 getTaskId(parent),
                 getUserIdentity(parent),
                 taskName,
-                terminateHandlerFactory,
+                allowInterrupt,
                 function);
     }
 
@@ -166,13 +162,13 @@ class TaskContextFactoryImpl implements TaskContextFactory, TaskContext {
     private Runnable createFromConsumer(final TaskId parentTaskId,
                                         final UserIdentity userIdentity,
                                         final String taskName,
-                                        final TerminateHandlerFactory terminateHandlerFactory,
+                                        final boolean allowInterrupt,
                                         final Consumer<TaskContext> consumer) {
         final Supplier<Void> supplierOut = createFromFunction(
                 parentTaskId,
                 userIdentity,
                 taskName,
-                terminateHandlerFactory,
+                allowInterrupt,
                 taskContext -> {
                     consumer.accept(taskContext);
                     return null;
@@ -183,15 +179,15 @@ class TaskContextFactoryImpl implements TaskContextFactory, TaskContext {
     private <R> Supplier<R> createFromFunction(final TaskId parentTaskId,
                                                final UserIdentity userIdentity,
                                                final String taskName,
-                                               final TerminateHandlerFactory terminateHandlerFactory,
+                                               final boolean allowInterrupt,
                                                final Function<TaskContext, R> function) {
-        return wrap(parentTaskId, userIdentity, taskName, terminateHandlerFactory, function);
+        return wrap(parentTaskId, userIdentity, taskName, allowInterrupt, function);
     }
 
     private <R> Supplier<R> wrap(final TaskId parentTaskId,
                                  final UserIdentity userIdentity,
                                  final String taskName,
-                                 final TerminateHandlerFactory terminateHandlerFactory,
+                                 final boolean allowInterrupt,
                                  final Function<TaskContext, R> function) {
         final LogExecutionTime logExecutionTime = new LogExecutionTime();
         final TaskId taskId = TaskIdFactory.create(parentTaskId);
@@ -226,9 +222,12 @@ class TaskContextFactoryImpl implements TaskContextFactory, TaskContext {
             subTaskContext.setThread(currentThread);
 
             // Create the termination handler.
-            final TerminateHandler terminateHandler = terminateHandlerFactory.create();
-            // Set the termination handler.
-            subTaskContext.setTerminateHandler(terminateHandler);
+            TerminateHandler terminateHandler = null;
+            if (allowInterrupt) {
+                terminateHandler = new ThreadTerminateHandler(currentThread);
+                // Add the termination handler.
+                subTaskContext.addTerminateHandler(terminateHandler);
+            }
 
             try {
                 // Let the parent task know about the child task.
@@ -280,8 +279,21 @@ class TaskContextFactoryImpl implements TaskContextFactory, TaskContext {
 
                 try {
                     subTaskContext.setThread(null);
-                    subTaskContext.setTerminateHandler(null);
-                    terminateHandler.onDestroy();
+                    if (terminateHandler != null) {
+                        subTaskContext.removeTerminateHandler(terminateHandler);
+                    }
+
+                    // Make sure we don't continue to interrupt a thread after the task context is out of scope.
+                    if (currentThread.isInterrupted()) {
+                        LOGGER.debug("Clearing interrupted state");
+                        if (Thread.interrupted()) {
+                            if (currentThread.isInterrupted()) {
+                                LOGGER.error("Unable to clear interrupted state");
+                            } else {
+                                LOGGER.debug("Cleared interrupted state");
+                            }
+                        }
+                    }
                 } finally {
 //                    currentThread.setName(oldThreadName);
                 }
@@ -325,5 +337,23 @@ class TaskContextFactoryImpl implements TaskContextFactory, TaskContext {
         if (taskContext != null) {
             taskContext.reset();
         }
+    }
+
+    @Override
+    public boolean addTerminateHandler(final TerminateHandler terminateHandler) {
+        final TaskContextImpl taskContext = CurrentTaskContext.currentContext();
+        if (taskContext != null) {
+            return taskContext.addTerminateHandler(terminateHandler);
+        }
+        return false;
+    }
+
+    @Override
+    public boolean removeTerminateHandler(final TerminateHandler terminateHandler) {
+        final TaskContextImpl taskContext = CurrentTaskContext.currentContext();
+        if (taskContext != null) {
+            return taskContext.removeTerminateHandler(terminateHandler);
+        }
+        return false;
     }
 }

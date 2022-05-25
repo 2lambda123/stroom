@@ -9,6 +9,7 @@ import stroom.search.extraction.StreamEventMap;
 import stroom.search.extraction.StreamEventMap.EventSet;
 import stroom.search.impl.shard.DocIdQueue;
 import stroom.search.impl.shard.ShardIdQueue;
+import stroom.task.api.SimpleTaskContext;
 import stroom.util.concurrent.CompleteException;
 
 import org.junit.jupiter.api.Test;
@@ -17,7 +18,6 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
@@ -64,7 +64,7 @@ class TestQueues {
     @SuppressWarnings("unchecked")
     void testDocIdQueue() {
         final int threads = 10;
-        final DocIdQueue queue = new DocIdQueue(1000000);
+        final DocIdQueue queue = new DocIdQueue(new SimpleTaskContext(), 1000000);
         final AtomicInteger produced = new AtomicInteger();
         final AtomicInteger consumed = new AtomicInteger();
         final Executor executor = Executors.newCachedThreadPool();
@@ -79,7 +79,7 @@ class TestQueues {
                     if (id > MAX) {
                         run = false;
                     } else {
-                        queue.offer(id, 1, TimeUnit.SECONDS);
+                        queue.put(id);
                     }
                 }
             }, executor);
@@ -91,9 +91,8 @@ class TestQueues {
             final CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                 try {
                     while (true) {
-                        if (queue.next() != null) {
-                            consumed.incrementAndGet();
-                        }
+                        queue.take();
+                        consumed.incrementAndGet();
                     }
                 } catch (final CompleteException e) {
                     // Ignore.

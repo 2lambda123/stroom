@@ -26,6 +26,7 @@ import stroom.query.api.v2.ExpressionOperator;
 import stroom.query.api.v2.ExpressionTerm.Condition;
 import stroom.security.api.SecurityContext;
 import stroom.task.api.TaskContext;
+import stroom.task.api.TerminateHandler;
 import stroom.task.shared.TaskId;
 import stroom.util.AbstractCommandLineTool;
 import stroom.util.io.BufferFactory;
@@ -194,6 +195,16 @@ public class StreamDumpTool extends AbstractCommandLineTool {
 
             @Override
             public void reset() {
+            }
+
+            @Override
+            public boolean addTerminateHandler(final TerminateHandler terminateHandler) {
+                return false;
+            }
+
+            @Override
+            public boolean removeTerminateHandler(final TerminateHandler terminateHandler) {
+                return false;
             }
         };
         dataDownloadTaskHandler.downloadData(taskContext, criteria, dir, format, dataDownloadSettings);

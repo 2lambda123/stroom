@@ -93,7 +93,7 @@ public interface TaskContextFactory {
      * @return A `Runnable` object to be passed to an executor or to `run()` directly.
      */
     Runnable context(String taskName,
-                     TerminateHandlerFactory terminateHandlerFactory,
+                     boolean allowInterrupt,
                      Consumer<TaskContext> consumer);
 
     /**
@@ -114,7 +114,7 @@ public interface TaskContextFactory {
      */
     Runnable childContext(TaskContext parentContext,
                           String taskName,
-                          TerminateHandlerFactory terminateHandlerFactory,
+                          boolean allowInterrupt,
                           Consumer<TaskContext> consumer);
 
     /**
@@ -130,7 +130,7 @@ public interface TaskContextFactory {
      * @return A `Supplier` object to be passed to an executor or to call `get()` directly.
      */
     <R> Supplier<R> contextResult(String taskName,
-                                  TerminateHandlerFactory terminateHandlerFactory,
+                                  boolean allowInterrupt,
                                   Function<TaskContext, R> function);
 
     /**
@@ -151,6 +151,6 @@ public interface TaskContextFactory {
      */
     <R> Supplier<R> childContextResult(TaskContext parentContext,
                                        String taskName,
-                                       TerminateHandlerFactory terminateHandlerFactory,
+                                       boolean allowInterrupt,
                                        Function<TaskContext, R> function);
 }

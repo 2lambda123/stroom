@@ -48,7 +48,6 @@ import stroom.document.client.DocumentTabData;
 import stroom.document.client.event.HasDirtyHandlers;
 import stroom.entity.client.presenter.DocumentEditPresenter;
 import stroom.entity.client.presenter.HasToolbar;
-import stroom.explorer.shared.DocumentType;
 import stroom.query.api.v2.Param;
 import stroom.query.api.v2.ParamUtil;
 import stroom.query.api.v2.ResultStoreInfo;
@@ -57,8 +56,7 @@ import stroom.query.api.v2.TimeRange;
 import stroom.query.client.presenter.QueryToolbarPresenter;
 import stroom.query.client.presenter.SearchErrorListener;
 import stroom.query.client.presenter.SearchStateListener;
-import stroom.svg.client.Icon;
-import stroom.svg.client.SvgImages;
+import stroom.svg.shared.SvgImage;
 import stroom.util.shared.Version;
 import stroom.widget.button.client.ButtonPanel;
 import stroom.widget.button.client.InlineSvgButton;
@@ -70,17 +68,22 @@ import stroom.widget.menu.client.presenter.SimpleParentMenuItem;
 import stroom.widget.popup.client.event.ShowPopupEvent;
 import stroom.widget.popup.client.presenter.PopupPosition;
 import stroom.widget.popup.client.presenter.PopupType;
+import stroom.widget.util.client.ElementUtil;
 import stroom.widget.util.client.MouseUtil;
+import stroom.widget.util.client.Rect;
 
+import com.google.gwt.dom.client.Element;
 import com.google.gwt.event.dom.client.ClickEvent;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.web.bindery.event.shared.EventBus;
 import com.google.web.bindery.event.shared.HandlerRegistration;
+import com.gwtplatform.mvp.client.MyPresenterWidget;
 import com.gwtplatform.mvp.client.View;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -155,16 +158,16 @@ public class DashboardPresenter
         view.setContent(flexLayout);
 
         editModeButton = new InlineSvgToggleButton();
-        editModeButton.setSvg(SvgImages.MONO_EDIT);
+        editModeButton.setSvg(SvgImage.EDIT);
         editModeButton.setTitle("Enter Design Mode");
 
         addWidgetButton = new InlineSvgButton();
-        addWidgetButton.setSvg(SvgImages.ADD);
+        addWidgetButton.setSvg(SvgImage.ADD);
         addWidgetButton.setTitle("Add Component");
         addWidgetButton.setVisible(false);
 
         setConstraintsButton = new InlineSvgButton();
-        setConstraintsButton.setSvg(SvgImages.MONO_RESIZE);
+        setConstraintsButton.setSvg(SvgImage.RESIZE);
         setConstraintsButton.setTitle("Set Constraints");
         setConstraintsButton.setVisible(false);
 
@@ -621,18 +624,11 @@ public class DashboardPresenter
         final ComponentType type = originalComponent.getType();
 
         // Get sets of unique component ids and names.
-        final Set<String> currentIdSet = new HashSet<>();
-        final Set<String> currentNameSet = new HashSet<>();
-        for (final Component component : components.getComponents()) {
-            currentIdSet.add(component.getId());
-            currentNameSet.add(component.getLabel());
-        }
-
-        final String id = UniqueUtil.createUniqueComponentId(type, currentIdSet);
-        final String newName = UniqueUtil.makeUniqueName(originalComponent.getLabel(), currentNameSet);
+        final ComponentId componentId = new ComponentNameSet(components)
+                .createUnique(type, originalComponent.getLabel());
         final ComponentConfig componentConfig = originalComponent.getComponentConfig().copy()
-                .id(id)
-                .name(newName)
+                .id(componentId.id)
+                .name(componentId.name)
                 .build();
 
         // Try and add the component.
@@ -653,17 +649,8 @@ public class DashboardPresenter
     }
 
     public void duplicateTabPanel(final TabLayoutConfig tabLayoutConfig) {
-        Size preferredSize = null;
-        if (tabLayoutConfig.getPreferredSize() != null) {
-            preferredSize = tabLayoutConfig.getPreferredSize().copy().build();
-        }
-
-        // Get a set of unique component ids.
-        final Set<String> currentIdSet = new HashSet<>();
-        for (final Component component : components.getComponents()) {
-            currentIdSet.add(component.getId());
-        }
-
+        // Get sets of unique component ids and names.
+        final ComponentNameSet componentNameSet = new ComponentNameSet(components);
         final Map<String, String> idMapping = new HashMap<>();
         final List<ComponentConfig> newComponents = new ArrayList<>();
         final Map<String, TabConfig> newTabConfigMap = new HashMap<>();
@@ -674,18 +661,17 @@ public class DashboardPresenter
                 originalComponent.write();
                 final ComponentType type = originalComponent.getType();
 
-                final String id = UniqueUtil.createUniqueComponentId(type, currentIdSet);
-                currentIdSet.add(id);
-
+                final ComponentId componentId = componentNameSet.createUnique(type, originalComponent.getLabel());
                 final ComponentConfig componentConfig = originalComponent.getComponentConfig().copy()
-                        .id(id)
+                        .id(componentId.id)
+                        .name(componentId.name)
                         .build();
 
-                idMapping.put(tabConfig.getId(), id);
+                idMapping.put(tabConfig.getId(), componentId.id);
                 newComponents.add(componentConfig);
 
-                final TabConfig newTabConfig = tabConfig.copy().id(id).build();
-                newTabConfigMap.put(id, newTabConfig);
+                final TabConfig newTabConfig = tabConfig.copy().id(componentId.id).build();
+                newTabConfigMap.put(componentId.id, newTabConfig);
             }
         }
 
@@ -719,33 +705,31 @@ public class DashboardPresenter
             modifiedComponents.add(componentConfig.copy().settings(settings).build());
         }
 
-        final List<TabConfig> tabs = new ArrayList<>();
         // Now try and add all the duplicated components.
+        final List<Component> duplicatedComponents = new ArrayList<>();
         for (final ComponentConfig componentConfig : modifiedComponents) {
             final Component component = addComponent(componentConfig.getType(), componentConfig);
             if (component != null) {
                 final TabConfig newTabConfig = newTabConfigMap.get(component.getId());
-                tabs.add(newTabConfig);
+                component.setTabConfig(newTabConfig);
+                duplicatedComponents.add(component);
             }
         }
 
         // Now link all the components.
-        for (final ComponentConfig componentConfig : modifiedComponents) {
-            final Component component = components.get(componentConfig.getId());
-            if (component != null) {
-                component.link();
-            }
+        for (final Component component : duplicatedComponents) {
+            component.link();
         }
 
-        final TabLayoutConfig newTabLayoutConfig = TabLayoutConfig
-                .builder()
-                .preferredSize(preferredSize)
-                .tabs(tabs)
-                .selected(tabLayoutConfig.getSelected())
-                .build();
-
-        // Add the new tab layout panel.
-        addTabPanel(newTabLayoutConfig);
+        if (duplicatedComponents.size() > 0) {
+            final TabConfig firstTabConfig = getFirstTabConfig(tabLayoutConfig);
+            final Element selectedComponent = getFirstComponentElement(firstTabConfig);
+            final Rect rect = ElementUtil.getClientRect(selectedComponent);
+            layoutPresenter.enterNewComponentDestinationMode(
+                    duplicatedComponents,
+                    rect.getLeft() + (rect.getWidth() / 2),
+                    rect.getTop() + (rect.getHeight() / 2));
+        }
     }
 
     @Override
@@ -849,8 +833,8 @@ public class DashboardPresenter
     }
 
     @Override
-    public Icon getIcon() {
-        return Icon.create(DocumentType.DOC_IMAGE_CLASS_NAME + getType());
+    public SvgImage getIcon() {
+        return SvgImage.DOCUMENT_DASHBOARD;
     }
 
     @Override
@@ -881,30 +865,79 @@ public class DashboardPresenter
         if (type != null) {
 
             // Get sets of unique component ids and names.
-            final Set<String> currentIdSet = new HashSet<>();
-            for (final Component component : components.getComponents()) {
-                currentIdSet.add(component.getId());
-            }
-
-            final String id = UniqueUtil.createUniqueComponentId(type, currentIdSet);
+            // Get sets of unique component ids and names.
+            final ComponentId componentId = new ComponentNameSet(components)
+                    .createUnique(type, type.getName());
             final ComponentConfig componentConfig = ComponentConfig
                     .builder()
                     .type(type.getId())
-                    .id(id)
-                    .name(type.getName())
+                    .id(componentId.id)
+                    .name(componentId.name)
                     .build();
 
             final Component componentPresenter = addComponent(componentConfig.getType(), componentConfig);
             if (componentPresenter != null) {
                 componentPresenter.link();
+                final TabConfig tabConfig = new TabConfig(componentId.id, true);
+                componentPresenter.setTabConfig(tabConfig);
+
+                final TabConfig firstTabConfig = getFirstTabConfig(layoutPresenter.getLayoutConfig());
+                if (firstTabConfig == null) {
+                    // Add the panel directly.
+                    final TabLayoutConfig tabLayoutConfig =
+                            new TabLayoutConfig(Size.builder().width(200).height(200).build(), null, 0);
+                    tabLayoutConfig.add(tabConfig);
+                    addTabPanel(tabLayoutConfig);
+                } else {
+                    final Element element = getFirstComponentElement(firstTabConfig);
+                    final Rect rect = ElementUtil.getClientRect(element);
+                    layoutPresenter.enterNewComponentDestinationMode(
+                            Collections.singletonList(componentPresenter),
+                            rect.getLeft() + (rect.getWidth() / 2),
+                            rect.getTop() + (rect.getHeight() / 2));
+                }
             }
-
-            final TabConfig tabConfig = new TabConfig(id, true);
-            final TabLayoutConfig tabLayoutConfig = new TabLayoutConfig(tabConfig);
-
-            // Add the new tab layout.
-            addTabPanel(tabLayoutConfig);
         }
+    }
+
+    private Element getFirstComponentElement(final TabConfig firstTabConfig) {
+        if (firstTabConfig != null) {
+            final Component component = components.get(firstTabConfig.getId());
+            if (component != null) {
+                final MyPresenterWidget<?> myPresenterWidget = (MyPresenterWidget<?>) component;
+                return myPresenterWidget.getWidget().getElement();
+            }
+        }
+        return getWidget().getElement();
+    }
+
+    private TabConfig getFirstTabConfig(final LayoutConfig layoutConfig) {
+        if (layoutConfig != null) {
+            if (layoutConfig instanceof SplitLayoutConfig) {
+                final SplitLayoutConfig splitLayoutConfig = (SplitLayoutConfig) layoutConfig;
+                final List<LayoutConfig> list = splitLayoutConfig.getChildren();
+                if (list != null) {
+                    for (final LayoutConfig child : list) {
+                        final TabConfig tabConfig = getFirstTabConfig(child);
+                        if (tabConfig != null) {
+                            return tabConfig;
+                        }
+                    }
+                }
+
+            } else if (layoutConfig instanceof TabLayoutConfig) {
+                final TabLayoutConfig tabLayoutConfig = (TabLayoutConfig) layoutConfig;
+                if (tabLayoutConfig.getTabs().size() > 0) {
+                    if (tabLayoutConfig.getSelected() >= 0 &&
+                            tabLayoutConfig.getSelected() < tabLayoutConfig.getTabs().size()) {
+                        return tabLayoutConfig.get(tabLayoutConfig.getSelected());
+                    } else {
+                        return tabLayoutConfig.get(0);
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     private void addTabPanel(final TabLayoutConfig tabLayoutConfig) {
@@ -919,7 +952,12 @@ public class DashboardPresenter
         } else if (layoutConfig instanceof TabLayoutConfig) {
             // If the layout is a single item then replace it with a
             // split layout.
-            layoutConfig = new SplitLayoutConfig(Dimension.Y, layoutConfig, tabLayoutConfig);
+            final SplitLayoutConfig splitLayoutConfig =
+                    new SplitLayoutConfig(layoutConfig.getPreferredSize().copy().build(), Dimension.Y);
+            splitLayoutConfig.add(layoutConfig);
+            splitLayoutConfig.add(tabLayoutConfig);
+            layoutConfig = splitLayoutConfig;
+
         } else {
             // If the layout is already a split then add a new component
             // to the split.
@@ -1067,6 +1105,38 @@ public class DashboardPresenter
     @Override
     public void onError(final List<String> errors) {
         queryToolbarPresenter.onError(getCombinedErrors());
+    }
+
+    private static class ComponentNameSet {
+
+        private final Set<String> currentIdSet = new HashSet<>();
+        private final Set<String> currentNameSet = new HashSet<>();
+
+        public ComponentNameSet(final Components components) {
+            for (final Component component : components.getComponents()) {
+                currentIdSet.add(component.getId());
+                currentNameSet.add(component.getLabel());
+            }
+        }
+
+        public ComponentId createUnique(final ComponentType type, final String currentName) {
+            final String id = UniqueUtil.createUniqueComponentId(type, currentIdSet);
+            final String name = UniqueUtil.makeUniqueName(currentName, currentNameSet);
+            currentIdSet.add(id);
+            currentNameSet.add(name);
+            return new ComponentId(id, name);
+        }
+    }
+
+    private static class ComponentId {
+
+        private final String id;
+        private final String name;
+
+        private ComponentId(final String id, final String name) {
+            this.id = id;
+            this.name = name;
+        }
     }
 }
 

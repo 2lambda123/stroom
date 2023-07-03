@@ -61,8 +61,10 @@ import com.gwtplatform.mvp.client.MyPresenterWidget;
 
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -85,6 +87,7 @@ public class DependenciesPresenter extends MyPresenterWidget<PagerView> {
 
     // Holds all the doc type icons
     private Map<String, SvgImage> typeToSvgMap = new HashMap<>();
+    private Set<String> openableTypes = new HashSet<>();
 
     @Inject
     public DependenciesPresenter(final EventBus eventBus,
@@ -272,7 +275,15 @@ public class DependenciesPresenter extends MyPresenterWidget<PagerView> {
         final Rest<DocumentTypes> rest = restFactory.create();
         rest
                 .onSuccess(documentTypes -> {
-                    typeToSvgMap = documentTypes.getVisibleTypes().stream()
+                    openableTypes = documentTypes
+                            .getTypes()
+                            .stream()
+                            .map(DocumentType::getType)
+                            .collect(Collectors.toSet());
+
+                    typeToSvgMap = documentTypes
+                            .getTypes()
+                            .stream()
                             .collect(Collectors.toMap(
                                     DocumentType::getType,
                                     DocumentType::getIcon));
@@ -283,6 +294,12 @@ public class DependenciesPresenter extends MyPresenterWidget<PagerView> {
                     typeToSvgMap.putIfAbsent(
                             "Searchable",
                             SvgImage.DOCUMENT_SEARCHABLE);
+                    typeToSvgMap.putIfAbsent(
+                            "Analytics",
+                            SvgImage.DOCUMENT_SEARCHABLE);
+                    typeToSvgMap.putIfAbsent(
+                            "ProcessorFilter",
+                            SvgImage.FILTER);
                 })
                 .call(EXPLORER_RESOURCE)
                 .fetchDocumentTypes();
@@ -293,7 +310,7 @@ public class DependenciesPresenter extends MyPresenterWidget<PagerView> {
                                 final boolean from) {
         final DocRef docRef = docRefExtractor.apply(row);
         if (docRef != null) {
-            if (from | row.isOk()) {
+            if (from || (openableTypes.contains(docRef.getType()) && row.isOk())) {
                 return new CommandLink(docRef.getName(), () -> onOpenDoc(docRef));
             } else {
                 return new CommandLink(docRef.getName(), null);

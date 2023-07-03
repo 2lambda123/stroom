@@ -134,8 +134,12 @@ public class TabManager {
         }
     }
 
-    private void removeTab(final TabLayoutConfig tabLayoutConfig, final TabConfig tabConfig) {
-        dashboardPresenter.requestTabClose(tabLayoutConfig, tabConfig);
+    private void removeTab(final TabLayoutConfig tabLayoutConfig, final TabConfig tab) {
+        dashboardPresenter.removeTab(tabLayoutConfig, tab);
+    }
+
+    private void removeTabPanel(final TabLayoutConfig tabLayoutConfig) {
+        dashboardPresenter.removeTabPanel(tabLayoutConfig);
     }
 
     private List<Item> updateMenuItems(final TabLayoutConfig tabLayoutConfig,
@@ -150,10 +154,6 @@ public class TabManager {
         // Create settings menu.
         menuItems.add(createSettingsMenu(tabConfig));
 
-        // Create duplicate menus.
-        menuItems.add(createDuplicateMenu(tabLayoutConfig, tabConfig));
-        menuItems.add(createDuplicateTabPanelMenu(tabLayoutConfig));
-
         // Create hide menu.
         menuItems.add(createHideMenu(tabLayoutConfig, tabConfig));
 
@@ -163,8 +163,13 @@ public class TabManager {
             menuItems.add(showMenu);
         }
 
-        // Create remove menu.
+        // Create duplicate menus.
+        menuItems.add(createDuplicateMenu(tabLayoutConfig, tabConfig));
+        menuItems.add(createDuplicateTabPanelMenu(tabLayoutConfig));
+
+        // Create remove menus.
         menuItems.add(createRemoveMenu(tabLayoutConfig, tabConfig));
+        menuItems.add(createRemoveTabPanel(tabLayoutConfig));
 
         return menuItems;
     }
@@ -188,27 +193,9 @@ public class TabManager {
                 .build();
     }
 
-    private Item createDuplicateMenu(final TabLayoutConfig tabLayoutConfig, final TabConfig tabConfig) {
-        return new IconMenuItem.Builder()
-                .priority(6)
-                .icon(SvgImage.COPY)
-                .text("Duplicate")
-                .command(() -> duplicateTab(tabLayoutConfig, tabConfig))
-                .build();
-    }
-
-    private Item createDuplicateTabPanelMenu(final TabLayoutConfig tabLayoutConfig) {
-        return new IconMenuItem.Builder()
-                .priority(7)
-                .icon(SvgImage.COPY)
-                .text("Duplicate All")
-                .command(() -> duplicateTabPanel(tabLayoutConfig))
-                .build();
-    }
-
     private Item createHideMenu(final TabLayoutConfig tabLayoutConfig, final TabConfig tabConfig) {
         return new IconMenuItem.Builder()
-                .priority(8)
+                .priority(6)
                 .icon(SvgImage.HIDE)
                 .text("Hide")
                 .command(() -> hideTab(tabLayoutConfig, tabConfig))
@@ -239,10 +226,28 @@ public class TabManager {
         }
 
         return new IconParentMenuItem.Builder()
-                .priority(9)
+                .priority(7)
                 .icon(SvgImage.SHOW)
                 .text("Show")
                 .children(menuItems)
+                .build();
+    }
+
+    private Item createDuplicateMenu(final TabLayoutConfig tabLayoutConfig, final TabConfig tabConfig) {
+        return new IconMenuItem.Builder()
+                .priority(8)
+                .icon(SvgImage.COPY)
+                .text("Duplicate")
+                .command(() -> duplicateTab(tabLayoutConfig, tabConfig))
+                .build();
+    }
+
+    private Item createDuplicateTabPanelMenu(final TabLayoutConfig tabLayoutConfig) {
+        return new IconMenuItem.Builder()
+                .priority(9)
+                .icon(SvgImage.COPY)
+                .text("Duplicate All")
+                .command(() -> duplicateTabPanel(tabLayoutConfig))
                 .build();
     }
 
@@ -252,6 +257,15 @@ public class TabManager {
                 .icon(SvgImage.DELETE)
                 .text("Remove")
                 .command(() -> removeTab(tabLayoutConfig, tabConfig))
+                .build();
+    }
+
+    private Item createRemoveTabPanel(final TabLayoutConfig tabLayoutConfig) {
+        return new IconMenuItem.Builder()
+                .priority(11)
+                .icon(SvgImage.DELETE)
+                .text("Remove All")
+                .command(() -> removeTabPanel(tabLayoutConfig))
                 .build();
     }
 }

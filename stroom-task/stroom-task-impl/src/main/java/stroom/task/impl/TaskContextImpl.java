@@ -129,9 +129,9 @@ public class TaskContextImpl implements TaskContext {
 
     synchronized void terminate() {
         this.terminate = true;
-        children.forEach(TaskContextImpl::terminate);
-
-        if (terminateHandler != null) {
+        if (children.size() > 0) {
+            children.forEach(TaskContextImpl::terminate);
+        } else if (terminateHandler != null) {
             terminateHandler.onTerminate();
         }
     }
@@ -197,14 +197,15 @@ public class TaskContextImpl implements TaskContext {
     }
 
     synchronized void addChild(final TaskContextImpl taskContext) {
+        checkTermination();
         children.add(taskContext);
-        if (terminate) {
-            taskContext.terminate();
-        }
     }
 
-    void removeChild(final TaskContextImpl taskContext) {
+    synchronized void removeChild(final TaskContextImpl taskContext) {
         children.remove(taskContext);
+        if (children.size() == 0 && terminate && terminateHandler != null) {
+            terminateHandler.onTerminate();
+        }
     }
 
     Set<TaskContextImpl> getChildren() {

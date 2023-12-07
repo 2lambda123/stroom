@@ -83,7 +83,7 @@
     <c3p0.version>0.9.5</c3p0.version>
     <flyway.version>4.0.3</flyway.version>
     <hsqldb.version>2.3.2</hsqldb.version>
-    <mysql-connector-java.version>5.1.40</mysql-connector-java.version>
+    <mysql-connector-java.version>8.0.28</mysql-connector-java.version>
     <validation-api.version>1.1.0.Final</validation-api.version>
     <aopalliance.version>1.0</aopalliance.version>
     <aspectj.version>1.8.9</aspectj.version>

@@ -74,7 +74,7 @@
     <!-- LATEST CHECK 2015/02/27 START -->
     <!-- ***************************** -->
     <inject.version>1</inject.version>
-    <spring.version>6.0.14</spring.version>
+    <spring.version>6.0.15</spring.version>
     <shiro.version>1.13.0</shiro.version>
     <jbcrypt.version>0.4.1</jbcrypt.version>
     <hibernate.version>5.3.20.Final</hibernate.version>
